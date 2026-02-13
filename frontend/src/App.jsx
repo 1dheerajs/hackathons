@@ -188,7 +188,7 @@ function App() {
             SYSTEM: LIQUIDITY ENGINE
           </h1>
           <div style={{ color: '#888', fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            Autonomous Quant Analysis • Status: Online  - Runs a market analysis and predictively tells you if you should buy a stock or not
+            Autonomous Quant Analysis • Status: Online  - Runs a market analysis and predictively tells you if you should buy a coin or not
           </div>
         </div>
 
