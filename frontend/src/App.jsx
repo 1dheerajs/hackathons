@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Brush
+  ReferenceArea
 } from 'recharts';
+import ExecutionPanel from './ExecutionPanel'; // Import the new Web3 component
 
 // Use environment variable if available, otherwise fallback to your backend URL
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
@@ -35,6 +36,12 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
+  // --- NEW ZOOM STATE VARIABLES ---
+  const [refAreaLeft, setRefAreaLeft] = useState('');
+  const [refAreaRight, setRefAreaRight] = useState('');
+  const [left, setLeft] = useState('dataMin');
+  const [right, setRight] = useState('dataMax');
+
   useEffect(() => {
     const fetchCryptos = async () => {
       try {
@@ -65,6 +72,9 @@ function App() {
       const data = await response.json();
       if (data.data) {
         setChartData(data.data);
+        // Reset zoom when loading new coin
+        setLeft('dataMin');
+        setRight('dataMax');
       }
     } catch (error) {
       console.error('Chart load failed:', error);
@@ -85,6 +95,28 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- ZOOM LOGIC ---
+  const zoom = () => {
+    if (refAreaLeft === refAreaRight || refAreaRight === '') {
+      setRefAreaLeft('');
+      setRefAreaRight('');
+      return;
+    }
+
+    let [l, r] = [refAreaLeft, refAreaRight];
+    if (l > r) [l, r] = [r, l];
+
+    setLeft(l);
+    setRight(r);
+    setRefAreaLeft('');
+    setRefAreaRight('');
+  };
+
+  const zoomOut = () => {
+    setLeft('dataMin');
+    setRight('dataMax');
   };
 
   // Filter logic for the search bar
@@ -117,6 +149,16 @@ function App() {
     } catch (e) {
       return urlStr;
     }
+  };
+
+  // Hardcoded map for demo execution panel
+  const getTokenAddress = (symbol) => {
+    const addresses = {
+      'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      'USDC': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      'DAI': '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+    };
+    return addresses[symbol] || '0x0000000000000000000000000000000000000000';
   };
 
   if (loading && !cryptos.length) {
@@ -327,67 +369,84 @@ function App() {
             )}
           </div>
 
-          {/* RIGHT PANEL - CHART */}
-          <div style={{
-            background: '#faf1f1',
-            padding: '25px',
-            borderRadius: '4px',
-            border: '1px solid #222',
-            height: 'fit-content', 
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '14px', letterSpacing: '1px', color: '#000000' }}>
-                PRICE ACTION (LAST {chartData.length} DAYS)
-              </h3>
-            </div>
+          {/* RIGHT PANEL - CHART & EXECUTION */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            {chartData.length > 0 ? (
-              <div style={{ width: '100%', height: '450px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                    <XAxis 
-                      dataKey="date" 
-                      stroke="#000000" 
-                      tick={{ fontSize: 12 }}
-                      tickMargin={10}
-                      minTickGap={30}
-                    />
-                    <YAxis 
-                      stroke="#000000" 
-                      tickFormatter={(v) => `$${v}`} 
-                      tick={{ fontSize: 12 }}
-                      domain={['auto', 'auto']}
-                    />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#000', borderColor: '#444', borderRadius: '4px', color: '#fff' }}
-                      itemStyle={{ color: '#fff' }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="price" 
-                      stroke="#000000" 
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 6, fill: '#fff', stroke: '#000', strokeWidth: 2 }}
-                    />
-                    <Brush 
-                      dataKey="date" 
-                      height={30} 
-                      stroke="#444"
-                      fill="#000"
-                      tickFormatter={() => ''}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+            {/* CHART */}
+            <div 
+              style={{
+                background: '#faf1f1', padding: '25px', borderRadius: '4px',
+                border: '1px solid #222', height: 'fit-content', userSelect: 'none'
+              }}
+              onDoubleClick={zoomOut}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <h3 style={{ margin: 0, fontSize: '14px', letterSpacing: '1px', color: '#000000' }}>
+                  PRICE ACTION (LAST {chartData.length} DAYS) - Drag to Zoom, Double Click to Reset
+                </h3>
               </div>
-            ) : (
-              <div style={{ height: '450px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
-                NO DATA AVAILABLE
-              </div>
+              
+              {chartData.length > 0 ? (
+                <div style={{ width: '100%', height: '450px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart 
+                      data={chartData} 
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      onMouseDown={(e) => e && setRefAreaLeft(e.activeLabel)}
+                      onMouseMove={(e) => refAreaLeft && setRefAreaRight(e.activeLabel)}
+                      onMouseUp={zoom}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                      <XAxis 
+                        dataKey="date" 
+                        domain={[left, right]}
+                        allowDataOverflow
+                        stroke="#000000" 
+                        tick={{ fontSize: 12 }}
+                        tickMargin={10}
+                        minTickGap={30}
+                      />
+                      <YAxis 
+                        domain={['auto', 'auto']}
+                        stroke="#000000" 
+                        tickFormatter={(v) => `$${v}`} 
+                        tick={{ fontSize: 12 }}
+                      />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#000', borderColor: '#444', borderRadius: '4px', color: '#fff' }}
+                        itemStyle={{ color: '#fff' }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="price" 
+                        stroke="#000000" 
+                        strokeWidth={2}
+                        dot={false}
+                        animationDuration={300}
+                        activeDot={{ r: 6, fill: '#fff', stroke: '#000', strokeWidth: 2 }}
+                      />
+                      
+                      {refAreaLeft && refAreaRight ? (
+                        <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="#3b82f6" />
+                      ) : null}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div style={{ height: '450px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
+                  NO DATA AVAILABLE
+                </div>
+              )}
+            </div>
+
+            {/* WEB3 EXECUTION PANEL */}
+            {selectedCrypto && (
+              <ExecutionPanel 
+                tokenSymbol={selectedCrypto.symbol} 
+                tokenAddress={getTokenAddress(selectedCrypto.symbol)} 
+              />
             )}
+
           </div>
         </div>  
 
@@ -396,31 +455,20 @@ function App() {
           
           {/* Left: Sentiment Analysis Box */}
           <div style={{
-            background: '#111',
-            padding: '25px',
-            borderRadius: '4px',
-            border: '1px solid #222',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center'
+            background: '#111', padding: '25px', borderRadius: '4px', border: '1px solid #222',
+            display: 'flex', flexDirection: 'column', justifyContent: 'center'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h3 style={{ margin: 0, fontSize: '14px', letterSpacing: '1px', color: '#fff', textTransform: 'uppercase' }}>
                 AI Sentiment Analysis
               </h3>
               
-              {/* --- DYNAMIC ONE-WORD SENTIMENT TAG --- */}
               {selectedCrypto && (
                 <span style={{
                   color: selectedCrypto?.components?.ai_sentiment === 'good' ? '#10b981' : 
                          selectedCrypto?.components?.ai_sentiment === 'bad' ? '#ef4444' : '#a3a3a3',
-                  fontWeight: 'bold',
-                  textTransform: 'uppercase',
-                  fontSize: '12px',
-                  padding: '4px 10px',
-                  background: 'rgba(255,255,255,0.05)',
-                  borderRadius: '4px',
-                  border: '1px solid #333'
+                  fontWeight: 'bold', textTransform: 'uppercase', fontSize: '12px', padding: '4px 10px',
+                  background: 'rgba(255,255,255,0.05)', borderRadius: '4px', border: '1px solid #333'
                 }}>
                   {selectedCrypto?.components?.ai_sentiment || 'OK'}
                 </span>
@@ -432,19 +480,11 @@ function App() {
                 'AWAITING ASSET SELECTION...'
               ) : (
                 <>
-                  {/* --- NEW: AI JUSTIFICATION BLURB --- */}
-                  <div style={{ 
-                    color: '#d4d4d8', 
-                    marginBottom: '20px', 
-                    lineHeight: '1.5', 
-                    fontStyle: 'italic',
-                    fontSize: '13px'
-                  }}>
+                  <div style={{ color: '#d4d4d8', marginBottom: '20px', lineHeight: '1.5', fontStyle: 'italic', fontSize: '13px' }}>
                     "{selectedCrypto.components?.ai_analysis || 'Awaiting live AI analysis...'}"
                   </div>
 
                   <div style={{ marginBottom: '8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>Sources:</div>
-                  {/* --- DYNAMIC LINKS ARRAY --- */}
                   {selectedCrypto.components?.ai_links && selectedCrypto.components.ai_links.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {selectedCrypto.components.ai_links.map((link, idx) => (
@@ -463,13 +503,8 @@ function App() {
 
           {/* Right: Disclaimer Warning Box */}
           <WarningBox customStyle={{ 
-            maxWidth: '100%', 
-            margin: '0', 
-            height: '100%', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            justifyContent: 'center',
-            boxSizing: 'border-box'
+            maxWidth: '100%', margin: '0', height: '100%', display: 'flex', flexDirection: 'column', 
+            justifyContent: 'center', boxSizing: 'border-box'
           }} />
 
         </div>
@@ -486,11 +521,7 @@ function App() {
                 No assets found matching "{searchTerm}"
               </div>
             ) : (
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', 
-                gap: '15px' 
-              }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>
                 {filteredCryptos.map(crypto => {
                    const style = signalStyle(crypto.signal);
                    const isSelected = selectedCrypto?.symbol === crypto.symbol;
@@ -503,12 +534,8 @@ function App() {
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
                       style={{
-                        padding: '20px',
-                        background: isSelected ? '#1a1a1a' : '#111',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        border: `1px solid ${isSelected ? '#fff' : '#222'}`,
-                        borderLeft: `4px solid ${style.borderColor}`,
+                        padding: '20px', background: isSelected ? '#1a1a1a' : '#111', borderRadius: '4px', cursor: 'pointer',
+                        border: `1px solid ${isSelected ? '#fff' : '#222'}`, borderLeft: `4px solid ${style.borderColor}`,
                         transition: 'all 0.2s ease',
                       }}
                       onMouseOver={(e) => {
@@ -529,13 +556,7 @@ function App() {
                         </div>
                       </div>
                       
-                      <div style={{ 
-                        fontSize: '14px', 
-                        fontWeight: 'bold',
-                        color: style.color, 
-                        marginBottom: '8px',
-                        letterSpacing: '0.5px'
-                      }}>
+                      <div style={{ fontSize: '14px', fontWeight: 'bold', color: style.color, marginBottom: '8px', letterSpacing: '0.5px' }}>
                         {crypto.signal}
                       </div>
                       
