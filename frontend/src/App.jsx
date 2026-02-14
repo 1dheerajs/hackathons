@@ -227,10 +227,10 @@ function App() {
             letterSpacing: '-0.5px',
             color: '#fff'
           }}>
-            SYSTEM: LIQUIDITY ENGINE
+            Autonomous Solvency and Liquidity Shock Modeling Engine
           </h1>
           <div style={{ color: '#888', fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' }}>
-            Autonomous Quant Analysis • Status: Online  - Runs a market analysis and predictively tells you if you should buy a coin or not
+          • Status: Online  - Runs a market analysis and predictively tells you if you should buy a coin or not with market sentiment
           </div>
         </div>
 
