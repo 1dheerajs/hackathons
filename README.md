@@ -1,6 +1,6 @@
 
 ```markdown
-# Ballast Liquidity Engine
+## Ballast Liquidity Engine
 **Real-time quantitative crypto analysis with integrated Web3 execution and AI sentiment tracking.**
 
 [![Vercel](https://img.shields.io/badge/Frontend-Vercel-000000?style=flat&logo=vercel)](https://your-vercel-link.vercel.app)
