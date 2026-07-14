@@ -13,8 +13,8 @@ import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 
 // 2. Setup Wagmi and RainbowKit configuration
 const config = getDefaultConfig({
-  appName: 'Ballast Liquidity Engine', 
-  projectId: 'YOUR_PROJECT_ID', // Don't forget to get this from cloud.walletconnect.com!
+  appName: 'Crypto Value Analyzer', 
+  projectId: process.env.REACT_APP_WC_PROJECT_ID || '', // Fallback to empty if missing
   chains: [mainnet, sepolia],
 });
 

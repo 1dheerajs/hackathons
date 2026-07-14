@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import './App.css';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceArea
@@ -66,7 +67,7 @@ function App() {
     fetchCryptos();
   }, []);
 
-  const loadChartData = async (symbol) => {
+  const loadChartData = useCallback(async (symbol) => {
     try {
       const response = await fetch(`${API_URL}/history/${symbol}`);
       const data = await response.json();
@@ -79,12 +80,12 @@ function App() {
     } catch (error) {
       console.error('Chart load failed:', error);
     }
-  };
+  }, [API_URL]);
 
   const refreshCrypto = async (symbol) => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/analyze/${symbol}`);
+      const response = await fetch(`${API_URL}/analyze/${symbol}`, { method: 'POST' });
       const data = await response.json();
       
       setSelectedCrypto(data);
@@ -158,7 +159,7 @@ function App() {
       'USDC': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
       'DAI': '0x6B175474E89094C44Da98b954EedeAC495271d0F'
     };
-    return addresses[symbol] || '0x0000000000000000000000000000000000000000';
+    return addresses[symbol];
   };
 
   if (loading && !cryptos.length) {
@@ -227,7 +228,7 @@ function App() {
             letterSpacing: '-0.5px',
             color: '#fff'
           }}>
-            Autonomous Solvency and Liquidity Shock Modeling Engine
+            Crypto Value Analyzer
           </h1>
           <div style={{ color: '#888', fontSize: '14px', letterSpacing: '1px', textTransform: 'uppercase' }}>
           • Status: Online  - Runs a market analysis and predictively tells you if you should buy a coin or not with market sentiment
@@ -311,24 +312,28 @@ function App() {
                     <div style={{ fontSize: '11px', color: '#888', marginBottom: '5px' }}>MODEL SCORE</div>
                     <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{selectedCrypto.final_score}</div>
                   </div>
-                  <div style={{ background: '#000', padding: '15px', border: '1px solid #222', borderRadius: '4px' }}>
-                    <div style={{ fontSize: '11px', color: '#888', marginBottom: '5px' }}>Z-SCORE (STD DEV)</div>
-                    <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{selectedCrypto.value_coefficient?.toFixed(2)}</div>
-                  </div>
                   
-                  {selectedCrypto.components?.volatility_pct !== undefined && (
+                  {selectedCrypto.components?.indicators?.rsi && (
                     <div style={{ background: '#000', padding: '15px', border: '1px solid #222', borderRadius: '4px' }}>
-                      <div style={{ fontSize: '11px', color: '#888', marginBottom: '5px' }}>VOLATILITY (1Y)</div>
+                      <div style={{ fontSize: '11px', color: '#888', marginBottom: '5px' }}>RSI (14)</div>
                       <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff' }}>
-                        {selectedCrypto.components.volatility_pct}%
+                        {selectedCrypto.components.indicators.rsi.value}
                       </div>
                     </div>
                   )}
-                  {selectedCrypto.components?.stability_score !== undefined && (
+                  {selectedCrypto.components?.indicators?.macd && (
                     <div style={{ background: '#000', padding: '15px', border: '1px solid #222', borderRadius: '4px' }}>
-                      <div style={{ fontSize: '11px', color: '#888', marginBottom: '5px' }}>STABILITY INDEX</div>
+                      <div style={{ fontSize: '11px', color: '#888', marginBottom: '5px' }}>MACD HISTOGRAM</div>
                       <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff' }}>
-                        {selectedCrypto.components.stability_score}
+                        {selectedCrypto.components.indicators.macd.histogram}
+                      </div>
+                    </div>
+                  )}
+                  {selectedCrypto.components?.indicators?.bollinger_bands && (
+                    <div style={{ background: '#000', padding: '15px', border: '1px solid #222', borderRadius: '4px' }}>
+                      <div style={{ fontSize: '11px', color: '#888', marginBottom: '5px' }}>BB SIGNAL</div>
+                      <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff' }}>
+                        {selectedCrypto.components.indicators.bollinger_bands.signal}
                       </div>
                     </div>
                   )}
@@ -337,30 +342,27 @@ function App() {
                 {/* BUTTONS */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <button
+                    className="hover-btn"
                     onClick={() => refreshCrypto(selectedCrypto.symbol)}
                     disabled={loading}
                     style={{
-                      width: '100%', padding: '14px', background: '#fff', color: '#000',
-                      border: '1px solid #fff', borderRadius: '4px', fontSize: '14px', fontWeight: '700',
-                      cursor: loading ? 'not-allowed' : 'pointer', letterSpacing: '1px', transition: 'background 0.2s'
+                      width: '100%', padding: '14px', borderRadius: '4px', fontSize: '14px', fontWeight: '700',
+                      cursor: loading ? 'not-allowed' : 'pointer', letterSpacing: '1px'
                     }}
-                    onMouseOver={(e) => !loading && (e.target.style.background = '#ddd')}
-                    onMouseOut={(e) => !loading && (e.target.style.background = '#fff')}
                   >
                     {loading ? 'ANALYZING...' : 'FORCE RE-ANALYZE'}
                   </button>
 
                   <a
+                    className="hover-link"
                     href={`https://exchange.coinbase.com/trade/${selectedCrypto.symbol}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
                       display: 'block', padding: '14px', background: '#000', color: '#fff',
                       textAlign: 'center', textDecoration: 'none', border: '1px solid #444', borderRadius: '4px',
-                      fontSize: '14px', fontWeight: '600', letterSpacing: '1px', transition: 'border-color 0.2s'
+                      fontSize: '14px', fontWeight: '600', letterSpacing: '1px'
                     }}
-                    onMouseOver={(e) => e.target.style.borderColor = '#fff'}
-                    onMouseOut={(e) => e.target.style.borderColor = '#444'}
                   >
                     VIEW ON EXCHANGE ↗
                   </a>
@@ -375,13 +377,13 @@ function App() {
             {/* CHART */}
             <div 
               style={{
-                background: '#faf1f1', padding: '25px', borderRadius: '4px',
+                background: '#111', padding: '25px', borderRadius: '4px',
                 border: '1px solid #222', height: 'fit-content', userSelect: 'none'
               }}
               onDoubleClick={zoomOut}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontSize: '14px', letterSpacing: '1px', color: '#000000' }}>
+                <h3 style={{ margin: 0, fontSize: '14px', letterSpacing: '1px', color: '#fff' }}>
                   PRICE ACTION (LAST {chartData.length} DAYS) - Drag to Zoom, Double Click to Reset
                 </h3>
               </div>
@@ -401,14 +403,14 @@ function App() {
                         dataKey="date" 
                         domain={[left, right]}
                         allowDataOverflow
-                        stroke="#000000" 
+                        stroke="#888" 
                         tick={{ fontSize: 12 }}
                         tickMargin={10}
                         minTickGap={30}
                       />
                       <YAxis 
                         domain={['auto', 'auto']}
-                        stroke="#000000" 
+                        stroke="#888" 
                         tickFormatter={(v) => `$${v}`} 
                         tick={{ fontSize: 12 }}
                       />
@@ -419,7 +421,7 @@ function App() {
                       <Line 
                         type="monotone" 
                         dataKey="price" 
-                        stroke="#000000" 
+                        stroke="#3b82f6" 
                         strokeWidth={2}
                         dot={false}
                         animationDuration={300}
@@ -440,7 +442,7 @@ function App() {
             </div>
 
             {/* WEB3 EXECUTION PANEL */}
-            {selectedCrypto && (
+            {selectedCrypto && getTokenAddress(selectedCrypto.symbol) && (
               <ExecutionPanel 
                 tokenSymbol={selectedCrypto.symbol} 
                 tokenAddress={getTokenAddress(selectedCrypto.symbol)} 
@@ -528,6 +530,7 @@ function App() {
                    return (
                     <div
                       key={crypto.symbol}
+                      className={`crypto-card ${isSelected ? 'selected' : ''}`}
                       onClick={() => {
                         setSelectedCrypto(crypto);
                         loadChartData(crypto.symbol);
@@ -536,15 +539,6 @@ function App() {
                       style={{
                         padding: '20px', background: isSelected ? '#1a1a1a' : '#111', borderRadius: '4px', cursor: 'pointer',
                         border: `1px solid ${isSelected ? '#fff' : '#222'}`, borderLeft: `4px solid ${style.borderColor}`,
-                        transition: 'all 0.2s ease',
-                      }}
-                      onMouseOver={(e) => {
-                        if(!isSelected) e.currentTarget.style.borderColor = '#444';
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                      }}
-                      onMouseOut={(e) => {
-                        if(!isSelected) e.currentTarget.style.borderColor = '#d2cece';
-                        e.currentTarget.style.transform = 'translateY(0)';
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -561,7 +555,7 @@ function App() {
                       </div>
                       
                       <div style={{ fontSize: '12px', color: '#666' }}>
-                        SCORE: {crypto.final_score} | Z-SCORE: {crypto.value_coefficient?.toFixed(2)}
+                        SCORE: {crypto.final_score}
                       </div>
                     </div>
                   );

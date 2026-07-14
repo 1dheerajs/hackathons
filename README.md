@@ -1,12 +1,10 @@
-
-```markdown
- Stock Value Analyzer
- **Real-time quantitative analysis of top stocks using proprietary exponential decay algorithm**
+# Crypto Value Analyzer
+**Real-time quantitative analysis of top cryptos using native technical algorithms**
 
 [![Vercel](https://img.shields.io/badge/Frontend-Vercel-000000?style=flat&logo=vercel)](https://stock-analyzer-project-po4e2s65z-dheerajs-dms-projects.vercel.app)
-[![Render](https://img.shields.io/badge/Backend-Render-46E3B7?style=flat&logo=render)](https://stock-analyzer-project-0fkx.onrender.com)
+[![Hostinger](https://img.shields.io/badge/Backend-Hostinger_KVM_2-673AB7?style=flat&logo=hostinger)](https://your-hostinger-vps-ip)
 [![Python](https://img.shields.io/badge/Python-3.13-blue?style=flat&logo=python)](https://www.python.org/)
-[![React](https://img.shields.io/badge/React-18-blue?style=flat&logo=react)](https://reactjs.org/)
+[![React](https://img.shields.io/badge/React-19-blue?style=flat&logo=react)](https://reactjs.org/)
 [![License](https://img.shields.io/badge/License-Educational-green?style=flat)](LICENSE)
 
 ## Live Demo
@@ -18,17 +16,17 @@
 
 ## Overview
 
-Stock Value Analyzer is a **production-grade full-stack quantitative finance application** that analyzes real stock data and generates intelligent BUY/HOLD/SELL signals using a hybrid algorithm combining:
+Crypto Value Analyzer is a **production-grade full-stack quantitative finance application** that analyzes real cryptocurrency data and generates intelligent BUY/HOLD/SELL signals using a hybrid algorithm combining:
 
-- **Exponential Decay Model** (recent prices weighted 83.3%)
-- **Technical Indicators** (momentum, volatility)
-- **Mean Reversion Analysis**
+- **4 Industry-Standard Technical Indicators** (RSI, MACD, Bollinger Bands, EMA)
+- **NewsAPI + Groq RAG Sentiment Analysis**
+- **Lightweight Asynchronous Math Engine**
 
 **Features:**
-- Real-time stock analysis for 10 US stocks
-- Interactive charts with 250-day price history
+- Real-time crypto analysis for top cryptocurrencies
+- Interactive charts with 200-day price history
 - Hybrid scoring algorithm (final_score: 0-100)
-- Automated daily scheduler (9:30 AM)
+- Automated Background Cron Jobs (15-min updates)
 - Instant API with <100ms latency
 - Global CDN deployment
 
@@ -36,13 +34,7 @@ Stock Value Analyzer is a **production-grade full-stack quantitative finance app
 
 ## Architecture
 
-
-```
-
-
 <img width="422" height="470" alt="image" src="https://github.com/user-attachments/assets/49eff2c0-ed60-4739-bbb9-9677ba41af3d" />
-
-```
 
 ---
 
@@ -58,13 +50,11 @@ Stock Value Analyzer is a **production-grade full-stack quantitative finance app
 
 **1. Clone & Setup**
 ```bash
-git clone [https://github.com/DheerajS-DM/stock-analyzer-project.git](https://github.com/DheerajS-DM/stock-analyzer-project.git)
-cd stock-analyzer
-
+git clone https://github.com/DheerajS-DM/StableCoin.git
+cd StableCoin
 ```
 
 **2. Backend Setup**
-
 ```bash
 cd backend
 python -m venv venv
@@ -73,18 +63,17 @@ pip install -r requirements.txt
 
 # Create .env
 cat > .env << EOF
-SUPABASE_URL=[https://your-project.supabase.co](https://your-project.supabase.co)
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-key-here
+CRON_SECRET=your-secret-here
 EOF
 
 # Run
 uvicorn main:app --reload
 # Backend on http://localhost:8000
-
 ```
 
 **3. Frontend Setup**
-
 ```bash
 cd ../frontend
 npm install
@@ -94,149 +83,130 @@ echo "REACT_APP_API_URL=http://localhost:8000" > .env.local
 
 npm start
 # Frontend on http://localhost:3000
-
 ```
 
 **4. Test**
-
 ```bash
 # Backend health check
 curl http://localhost:8000/health
 
-# Analyze AAPL
-curl "http://localhost:8000/analyze/AAPL"
+# Analyze BTC
+curl "http://localhost:8000/analyze/BTC-USD"
 
-# Get top stocks
-curl http://localhost:8000/stocks
-
+# Get top cryptos
+curl http://localhost:8000/cryptos
 ```
 
 ---
 
 ## Algorithm Explained
 
-### Exponential Decay Model
+### The "Committee" Technical Model
 
-**Core Concept:** Recent stock prices matter more than old prices.
+**Core Concept:** Instead of relying on a single indicator or heavy Pandas processing, we use a lightweight native Python engine executing 4 industry-standard algorithms simultaneously to form a consensus.
 
-**Formula:**
+**1. RSI (Relative Strength Index) - Momentum**
+Measures the speed and change of price movements. 
+- BUY if < 30 (Oversold), SELL if > 70 (Overbought).
 
-```
-weights = [0.007, 0.04, 0.12, 0.833]  # for 4Y, 2Y, 1Y, today
-weighted_avg = Σ(price[i] × weight[i])
-value_coeff = current_price / weighted_avg
+**2. MACD (Moving Average Convergence Divergence) - Trend**
+Shows the relationship between two moving averages (12 EMA and 26 EMA).
+- BUY if MACD line crosses above the Signal line.
 
-if value_coeff > 1.05: "SELL" (overvalued)
-if value_coeff < 0.95: "BUY" (undervalued)
-else: "HOLD"
+**3. Bollinger Bands - Volatility & Mean Reversion**
+Plots standard deviations away from a Simple Moving Average (SMA).
+- BUY if price touches the lower band, SELL if it touches the upper band.
 
-```
+**4. EMA Crossover - Trend Confirmation**
+Uses 9-EMA and 21-EMA crossovers to confirm directional trends.
 
-**Example (AAPL):**
+**Consensus Logic:**
+Each model casts a "vote" (BUY, SELL, or HOLD). 
+- 4/4 BUY = **STRONG BUY**
+- 3/4 BUY = **BUY**
+- Mixed = **HOLD**
 
-```
-Price History:
-$100 (4Y ago)  × 0.7%   = $0.70
-$150 (2Y ago)  × 4%     = $6.00
-$220 (1Y ago)  × 12%    = $26.40
-$250 (today)   × 83.3%  = $208.25
-                         ────────
-                  Weighted Avg = $241.35
-
-Current = $250
-Coefficient = 250 / 241.35 = 1.036
-Signal = "HOLD" (slightly overvalued)
-
-```
+### AI RAG Sentiment (Groq)
+In addition to the math, the engine fetches the latest news headlines via **NewsAPI** and injects them into a **Groq (Llama-3 70B)** prompt. This Retrieval-Augmented Generation ensures the AI is scoring based on *today's* news, adjusting the math score slightly up or down.
 
 ### Why It Works
 
-* **Catches trends early** - Recent momentum dominates
-* **Ignores old crashes** - 2020 pandemic doesn't affect 2026 decision
-* **Scales automatically** - Works in bull/bear markets
-* **Data-driven** - No subjective inputs
+* **Consensus Validation** - No single false signal triggers a trade.
+* **Highly Optimized** - Runs without Pandas/Numpy, preventing OOM errors on limited VPS instances.
+* **Context-Aware** - Blends pure technical math with real-world news sentiment.
+* **Extensible** - Easy to plug in new algorithms into `trading_math.py`.
 
 ---
 
 ## API Documentation
 
-### GET `/stocks`
+### GET `/cryptos`
 
-Returns top 100 stocks sorted by final_score.
+Returns top cryptos sorted by final_score.
 
 ```bash
-curl [https://stock-analyzer-project-0fkx.onrender.com/stocks](https://stock-analyzer-project-0fkx.onrender.com/stocks)
-
+curl http://localhost:8000/cryptos
 ```
 
 **Response:**
 
 ```json
 {
-  "stocks": [
+  "cryptos": [
     {
-      "symbol": "AAPL",
-      "current_price": 271.01,
-      "final_score": 40.6,
-      "signal": "HOLD",
-      "weighted_avg": 223.12,
-      "created_at": "2026-01-05T08:00:00Z"
-    },
-    ...
+      "symbol": "BTC-USD",
+      "current_price": 60000.0,
+      "final_score": 75.5,
+      "signal": "STRONG BUY",
+      "updated_at": "2026-01-05T08:00:00Z"
+    }
   ]
 }
-
-```
-
-### GET `/analyze/{symbol}`
-
-Analyze single stock.
-
-```bash
-curl [https://stock-analyzer-project-0fkx.onrender.com/analyze/MSFT](https://stock-analyzer-project-0fkx.onrender.com/analyze/MSFT)
-
-```
-
-**Response:**
-
-```json
-{
-  "symbol": "MSFT",
-  "current_price": 416.22,
-  "final_score": 68.3,
-  "signal": "BUY",
-  "weighted_avg": 398.44,
-  "margin": 17.78
-}
-
 ```
 
 ### GET `/history/{symbol}`
 
-270-day price history.
+200-day price history.
 
 ```bash
-curl [https://stock-analyzer-project-0fkx.onrender.com/history/AAPL](https://stock-analyzer-project-0fkx.onrender.com/history/AAPL)
-
+curl http://localhost:8000/history/BTC-USD
 ```
 
 **Response:**
 
 ```json
 {
-  "dates": ["2025-04-01", "2025-04-02", ...],
-  "prices": [220.50, 221.30, ...]
+  "data": [
+    {"date": "2025-04-01", "price": 60000.0}
+  ]
 }
-
 ```
 
-### GET `/trigger-scheduler`
+### GET `/cron/keep-alive`
 
-Force daily analysis immediately.
+Lightweight endpoint designed to be hit by a cron job to prevent Supabase from pausing.
 
 ```bash
-curl [https://stock-analyzer-project-0fkx.onrender.com/trigger-scheduler](https://stock-analyzer-project-0fkx.onrender.com/trigger-scheduler)
+curl http://localhost:8000/cron/keep-alive
+```
 
+### POST `/cron/update-market`
+
+Triggers the background task to run the math engines, fetch news, ask Groq, and update Supabase. Designed for a 15-minute cron. Requires authorization.
+
+```bash
+curl -X POST http://localhost:8000/cron/update-market \
+  -H "cron-secret: your-secret-here"
+```
+
+### POST `/chat`
+
+Chatbot endpoint that uses Groq to answer questions about specific assets. Handles rate limits gracefully.
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Why is this dropping?", "symbol": "BTC-USD"}'
 ```
 
 ---
@@ -245,39 +215,42 @@ curl [https://stock-analyzer-project-0fkx.onrender.com/trigger-scheduler](https:
 
 | Layer | Technology | Purpose |
 | --- | --- | --- |
-| **Frontend** | React 18 | Interactive UI |
+| **Frontend** | React 19 | Interactive UI |
 | **Charting** | Recharts | Interactive price charts |
 | **Backend** | FastAPI 0.104 | REST API |
-| **Database** | Supabase (PostgreSQL) | Stock data storage |
-| **Data Source** | yfinance | Real-time stock prices |
-| **Scheduling** | APScheduler | Daily automation |
+| **Database** | Supabase (PostgreSQL) | Crypto data storage |
+| **Data Source** | Coinbase API & NewsAPI | Real-time prices and news |
+| **Scheduling** | Hostinger crontab | 15-min background updates |
 | **Deployment (FE)** | Vercel | Global CDN |
-| **Deployment (BE)** | Render | Free tier backend |
-| **CI/CD** | GitHub Actions | Automated testing |
+| **Deployment (BE)** | Hostinger KVM 2 | Robust VPS |
+| **AI/LLM** | Groq (Llama-3 70B) | High-speed RAG sentiment |
+| **Testing** | Pytest | Automated API Benchmarks |
 
 ---
 
 ## File Structure
 
 ```
-stock-analyzer/
+StableCoin/
 ├── backend/
 │   ├── main.py               # FastAPI app + scheduler
+│   ├── trading_math.py       # Core algorithms
 │   ├── requirements.txt      # Python dependencies
+│   ├── tests/                # Test suite
 │   └── .env                  # Supabase credentials
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx           # Main component
+│   │   ├── ExecutionPanel.jsx# Web3 Execution logic
 │   │   ├── App.css           # Styles
 │   │   └── index.js          # React entry
 │   ├── package.json          # NPM dependencies
 │   └── .env.local            # API URL
 ├── .github/workflows/
-│   ├── backend-test.yml      # Backend CI/CD
-│   └── frontend-build.yml    # Frontend CI/CD
+│   ├── backend-tests.yml     # Backend CI/CD
+│   └── frontend-tests.yml    # Frontend CI/CD
 ├── .gitignore
 └── README.md                 # This file
-
 ```
 
 ---
@@ -287,18 +260,17 @@ stock-analyzer/
 ### Backend (.env)
 
 ```bash
-SUPABASE_URL=[https://your-project.supabase.co](https://your-project.supabase.co)
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
+CRON_SECRET=your-cron-secret
 # Optional:
 SUPABASE_SERVICE_KEY=your-service-key  # For backend auth
-
 ```
 
 ### Frontend (.env.local)
 
 ```bash
-REACT_APP_API_URL=[https://stock-analyzer-project-0fkx.onrender.com](https://stock-analyzer-project-0fkx.onrender.com)
-
+REACT_APP_API_URL=https://stock-analyzer-project-0fkx.onrender.com
 ```
 
 ---
@@ -308,146 +280,14 @@ REACT_APP_API_URL=[https://stock-analyzer-project-0fkx.onrender.com](https://sto
 * **API Response Time:** <100ms (p95)
 * **Frontend Load:** ~1.2s (globally)
 * **Database Queries:** <50ms
-* **Stocks Analyzed:** 100+ daily
-* **Update Frequency:** 24h (9:30 AM EST)
+* **Update Frequency:** 15m
 * **Uptime:** 99.5% (free tier)
 
 ---
 
 ## Security & Disclaimer
 
-**NOT FINANCIAL ADVICE**
+⚠️ **NOT FINANCIAL ADVICE** ⚠️
+This software is built for educational and theoretical purposes only. It does not constitute financial advice, and you should not trade real money based on its outputs. The cryptocurrency market is highly volatile.
 
-* This project is **educational only**
-* Do not use for real trading decisions
-* Past performance != future results
-* Always consult a licensed financial advisor
-
-**Security:**
-
-* RLS disabled (public read data only)
-* Environment variables for secrets
-* HTTPS only
-* No authentication required (public API)
-
----
-
-## Deployment
-
-### Frontend (Vercel)
-
-1. Push to GitHub
-2. Vercel auto-deploys from main branch
-3. Set `REACT_APP_API_URL` environment variable
-4. Live at: `https://your-project.vercel.app`
-
-### Backend (Render)
-
-1. Connect GitHub repo
-2. Root directory: `backend`
-3. Build: `pip install -r requirements.txt`
-4. Start: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Add Supabase env vars
-6. Live at: `https://your-app.onrender.com`
-
----
-
-## Data Sources
-
-* **Stock Data:** Yahoo Finance (via yfinance)
-* **Storage:** Supabase PostgreSQL
-* **Real-time Updates:** APScheduler (daily 9:30 AM)
-
----
-
-## Contributing
-
-**For personal use / learning:**
-
-1. Fork repo
-2. Create feature branch: `git checkout -b feature/your-feature`
-3. Commit: `git commit -m "Add feature"`
-4. Push: `git push origin feature/your-feature`
-5. Create Pull Request
-
----
-
-## Learning Resources
-
-* [FastAPI Docs](https://fastapi.tiangolo.com/)
-* [React Docs](https://react.dev/)
-* [Supabase Docs](https://supabase.com/docs)
-* [yfinance Docs](https://github.com/ranaroussi/yfinance)
-* [Vercel Docs](https://vercel.com/docs)
-* [Render Docs](https://render.com/docs)
-
----
-
-## Skills Demonstrated
-
-**Quantitative Finance:**
-
-* Algorithm design (exponential decay)
-* Financial modeling
-* Time-series analysis
-* Risk scoring
-
-**Full-Stack Development:**
-
-* Backend: REST APIs, async Python, database integration
-* Frontend: React components, API integration, charts
-* DevOps: CI/CD, environment variables, monitoring
-
-**Cloud Deployment:**
-
-* Serverless architecture (Vercel)
-* Container orchestration concepts (Render)
-* Database-as-a-service (Supabase)
-* GitHub Actions automation
-
----
-
-## Portfolio Impact
-
-**For internships/jobs, this demonstrates:**
-
-> "I built a production-grade quantitative finance application analyzing 100+ stocks daily using a proprietary algorithm. Full-stack deployment (React + FastAPI + Supabase) on Vercel & Render with automated CI/CD and real-time data processing."
-
-**Key metrics:**
-
-* Live & production-ready
-* Real data (100+ stocks)
-* <100ms API latency
-* Automated scheduling
-* Global deployment
-
----
-
-## License
-
-Educational Use Only - See LICENSE file
-
----
-
-## Author
-
-**Dheeraj S** | Computer Science Student | VIT Vellore
-Building quantitative finance tools for the future
-
----
-
-## Support
-
-* **Questions?** Check [FastAPI Docs](https://fastapi.tiangolo.com/)
-* **Deploy issues?** See [Vercel](https://vercel.com/support) or [Render](https://render.com/support) docs
-* **Database help?** Check [Supabase Docs](https://supabase.com/docs)
-
----
-
-**Last Updated:** January 5, 2026
-**Status:** Production Ready
-**Uptime:** 24/7 monitoring enabled
-
-```
-
-```
+*This project is open-source and free to use.*

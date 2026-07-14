@@ -15,11 +15,23 @@ export default function ExecutionPanel({ tokenAddress, tokenSymbol }) {
   const [amount, setAmount] = useState('');
 
   const handleTransfer = () => {
+    if (!recipient || !/^0x[a-fA-F0-9]{40}$/.test(recipient)) {
+      alert("Invalid recipient address.");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      alert("Please enter a valid amount.");
+      return;
+    }
+    
+    // USDC and USDT use 6 decimals on EVM, most others use 18
+    const decimals = (tokenSymbol.includes('USDC') || tokenSymbol.includes('USDT')) ? 6 : 18;
+    
     writeContract({
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: 'transfer',
-      args: [recipient, parseUnits(amount, 18)], // Assuming 18 decimals, adjust if USDC (6)
+      args: [recipient, parseUnits(amount, decimals)],
     });
   };
 
@@ -28,7 +40,7 @@ export default function ExecutionPanel({ tokenAddress, tokenSymbol }) {
   const uniswapSellLink = `https://app.uniswap.org/#/swap?inputCurrency=${tokenAddress}&outputCurrency=ETH`;
 
   return (
-    <div style={{ padding: '20px', border: '2px solid black', marginTop: '20px' }}>
+    <div style={{ padding: '20px', border: '1px solid #333', backgroundColor: '#1a1a1a', borderRadius: '8px', marginTop: '20px', color: '#fff' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <h2>Execute: {tokenSymbol}</h2>
         <ConnectButton />
@@ -41,34 +53,30 @@ export default function ExecutionPanel({ tokenAddress, tokenSymbol }) {
             <h3>Transfer {tokenSymbol}</h3>
             <input 
               placeholder="Recipient (0x...)" 
-              style={{ display: 'block', margin: '10px 0', padding: '8px', width: '300px' }}
+              style={{ display: 'block', margin: '10px 0', padding: '8px', width: '300px', backgroundColor: '#222', color: '#fff', border: '1px solid #444', borderRadius: '4px' }}
               onChange={(e) => setRecipient(e.target.value)} 
             />
             <input 
               placeholder="Amount" 
               type="number" 
-              style={{ display: 'block', margin: '10px 0', padding: '8px', width: '300px' }}
+              style={{ display: 'block', margin: '10px 0', padding: '8px', width: '300px', backgroundColor: '#222', color: '#fff', border: '1px solid #444', borderRadius: '4px' }}
               onChange={(e) => setAmount(e.target.value)} 
             />
-            <button onClick={handleTransfer} style={{ padding: '10px', background: 'black', color: 'white', cursor: 'pointer' }}>
+            <button onClick={handleTransfer} style={{ padding: '10px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
               Send {tokenSymbol} On-Chain
             </button>
           </div>
 
           {/* Trade / Swap Linking Section */}
-          <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #ccc' }}>
+          <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #333' }}>
              <h3>Market Actions</h3>
              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                 <a href={uniswapBuyLink} target="_blank" rel="noreferrer">
-                   <button style={{ padding: '10px 20px', background: '#3b82f6', color: 'white', border: 'none', cursor: 'pointer' }}>
-                     Buy {tokenSymbol}
-                   </button>
-                 </a>
-                 <a href={uniswapSellLink} target="_blank" rel="noreferrer">
-                   <button style={{ padding: '10px 20px', background: '#ef4444', color: 'white', border: 'none', cursor: 'pointer' }}>
-                     Emergency Swap (Sell)
-                   </button>
-                 </a>
+                 <button onClick={() => window.open(uniswapBuyLink, '_blank')} style={{ padding: '10px 20px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                   Buy {tokenSymbol}
+                 </button>
+                 <button onClick={() => window.open(uniswapSellLink, '_blank')} style={{ padding: '10px 20px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                   Emergency Swap (Sell)
+                 </button>
              </div>
           </div>
         </>

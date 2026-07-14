@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-requests
-pandas
-numpy
-python-dotenv
-supabase
-apscheduler
-groq

@@ -1,15 +1,15 @@
 import pytest
-from fastapi.testclient import TestClient
+from httpx import AsyncClient, ASGITransport
 from main import app
 
-client = TestClient(app)
-
-def test_health_check():
-    response = client.get("/health")
+@pytest.mark.asyncio
+async def test_health_check(async_client):
+    response = await async_client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 
-def test_root():
-    response = client.get("/")
+@pytest.mark.asyncio
+async def test_root(async_client):
+    response = await async_client.get("/")
     assert response.status_code == 200
-    assert response.json()["status"] == "Stock Value Analyzer API running"
+    assert response.json()["status"] == "Crypto Value Analyzer (Hostinger Edition) running"

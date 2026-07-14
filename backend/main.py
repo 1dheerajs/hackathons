@@ -1,50 +1,31 @@
 import os
-import time
 import json
-import requests
-from pathlib import Path
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from fastapi import FastAPI
+import httpx
+import asyncio
+from datetime import datetime, timedelta, timezone
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-import atexit
-import concurrent.futures
-
 from groq import Groq
 
-# --- Setup & Configuration ---
-app.add_middleware(
-    CORSMiddleware,
-    # Replace with your actual frontend URL once deployed
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://localhost:5173", 
-        "https://your-portfolio-site.vercel.app"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Import our new, lightweight math engine
+import trading_math
 
-env_path = Path(__file__).parent / '.env'
+# --- Setup & Configuration ---
+env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path=env_path)
 
 # Supabase Setup
 url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_ANON_KEY")
 supabase: Client = None
-
 if url and key:
     try:
         supabase = create_client(url, key)
-        print("Supabase Connected")
     except Exception as e:
-        print(f"Supabase Connection Failed: {e}")
+        print(f"Supabase init error: {e}")
 
 # Groq Setup
 groq_api_key = os.getenv("GROQ_API_KEY")
@@ -52,23 +33,21 @@ groq_client = None
 if groq_api_key:
     try:
         groq_client = Groq(api_key=groq_api_key)
-        print("Groq API Configured for Bulk Analysis")
     except Exception as e:
-        print(f"Groq Client Error: {e}")
-else:
-    print("Groq API Key missing")
+        print(f"Groq init error: {e}")
 
-app = FastAPI(title="Crypto Value Analyzer", version="1.0.0")
+# NewsAPI Setup
+news_api_key = os.getenv("NEWS_API_KEY")
+
+app = FastAPI(title="Crypto Value Analyzer (Hostinger KVM Optimized)", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --- Global Config ---
 
 TRACKED_CRYPTOS = [
     "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD", "AVAX-USD", 
@@ -77,249 +56,209 @@ TRACKED_CRYPTOS = [
     "SNX-USD", "MKR-USD", "GRT-USD", "FTM-USD", "SAND-USD", "MANA-USD"
 ]
 
-# --- GROQ CLOUD: Bulk AI Sentiment Fetcher ---
+# --- Async Data Fetchers ---
 
-def fetch_bulk_ai_sentiment(symbols: list) -> dict:
-    """Sends ONE prompt to Groq containing all requested coins."""
-    if not groq_client:
-        return {}
-        
+async def fetch_news_headlines(symbol: str) -> str:
+    """Fetches recent news headlines for RAG injection."""
+    if not news_api_key:
+        return "No recent news available (API Key missing)."
+    
+    coin_ticker = symbol.split('-')[0]
+    # Query for the last 3 days
+    from_date = (datetime.now(timezone.utc) - timedelta(days=3)).strftime('%Y-%m-%d')
+    url = f"https://newsapi.org/v2/everything?q={coin_ticker}+crypto&from={from_date}&sortBy=publishedAt&apiKey={news_api_key}&pageSize=3"
+    
     try:
-        # 🚨 NEW: Added 'analysis' to the strict JSON requirements
-        prompt = f"""
-        Analyze the current overall market sentiment for the following cryptocurrencies: {', '.join(symbols)}. 
-        Return EXACTLY a valid JSON object.
-        The JSON must follow this exact structure:
-        {{
-            "SYMBOL-USD": {{
-                "sentiment": "good" | "ok" | "bad",
-                "analysis": "A brief 1 to 2 sentence justification explaining why this sentiment was chosen based on current market conditions."
-            }}
-        }}
-        Ensure every symbol in the list is included as a key.
-        """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                articles = data.get("articles", [])
+                if not articles:
+                    return "No recent news found."
+                headlines = [f"- {a.get('title')} ({a.get('source', {}).get('name')})" for a in articles]
+                return "\n".join(headlines)
+    except Exception as e:
+        print(f"News fetch error for {symbol}: {e}")
         
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a quantitative crypto analyst. You only respond in strictly formatted JSON."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.2, 
-            response_format={"type": "json_object"} 
-        )
+    return "Error fetching news."
+
+async def fetch_groq_sentiment(symbol: str, headlines: str) -> dict:
+    """Uses Groq with RAG (Recent Headlines) for accurate sentiment."""
+    if not groq_client:
+        return {"sentiment": "ok", "analysis": "AI Offline."}
         
+    prompt = f"""
+    You are a quantitative crypto analyst. Based ONLY on the following recent news headlines, determine the current market sentiment for {symbol}.
+    
+    Recent Headlines:
+    {headlines}
+    
+    Respond EXACTLY in this JSON format:
+    {{
+        "sentiment": "good" | "ok" | "bad",
+        "analysis": "1-2 sentence justification based on the headlines provided."
+    }}
+    """
+    try:
+        # Run synchronous Groq API call in a thread to not block async loop
+        def _call_groq():
+            return groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            
+        chat_completion = await asyncio.to_thread(_call_groq)
         text = chat_completion.choices[0].message.content.strip()
         
-        if text.startswith("```json"): text = text[7:]
-        if text.startswith("```"): text = text[3:]
-        if text.endswith("```"): text = text[:-3]
-            
-        return json.loads(text.strip())
-        
+        return json.loads(text)
     except Exception as e:
-        print(f"Bulk Groq API Error: {e}")
-        return {}
+        print(f"Groq API Error for {symbol}: {e}")
+        return {"sentiment": "ok", "analysis": "AI analysis failed."}
 
-# --- Coinbase Data Fetcher ---
-
-def fetch_coinbase_candles(symbol: str, days: int = 1460) -> pd.DataFrame:
+async def fetch_coinbase_candles_async(client: httpx.AsyncClient, symbol: str, days: int = 200) -> list[float]:
+    """Lightweight async fetcher returning only close prices."""
     url = f"https://api.exchange.coinbase.com/products/{symbol}/candles"
-    granularity = 86400  
-    
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(days=days)
     
-    all_candles = []
-    current_end = end_time
+    params = {
+        "start": start_time.isoformat(),
+        "end": end_time.isoformat(),
+        "granularity": 86400  # 1 day candles
+    }
     
-    while current_end > start_time:
-        current_start = max(start_time, current_end - timedelta(days=200))
-        
-        params = {
-            "start": current_start.isoformat(),
-            "end": current_end.isoformat(),
-            "granularity": granularity
-        }
-        
-        response = requests.get(url, params=params)
-        
+    try:
+        response = await client.get(url, params=params, timeout=10.0)
         if response.status_code == 200:
             data = response.json()
-            if not data: break
-            all_candles.extend(data)
+            # Coinbase returns: [ [time, low, high, open, close, volume], ... ]
+            # It's sorted descending by time, so we reverse it for our math engine
+            data.reverse()
+            close_prices = [float(candle[4]) for candle in data]
+            return close_prices
         elif response.status_code == 429:
-            time.sleep(1)
-            continue
-        else:
-            break
-            
-        current_end = current_start - timedelta(seconds=1)
-        time.sleep(0.1)
+            print(f"Rate limited by Coinbase for {symbol}")
+            return []
+    except Exception as e:
+        print(f"Coinbase fetch error for {symbol}: {e}")
         
-    if not all_candles: return pd.DataFrame()
-        
-    df = pd.DataFrame(all_candles, columns=['time', 'low', 'high', 'open', 'Close', 'volume'])
-    df['time'] = pd.to_datetime(df['time'], unit='s')
-    df.set_index('time', inplace=True)
-    df.sort_index(inplace=True)
-    
-    return df
+    return []
 
 # --- Core Algorithm ---
 
-def calculate_hybrid_value(symbol: str, decay_weight=0.7, tech_weight=0.3, ai_data=None) -> dict:
-    try:
-        symbol = symbol.upper().strip()
+async def analyze_and_upsert_symbol(client: httpx.AsyncClient, symbol: str):
+    """Fetches data, runs the 4 math models, fetches AI sentiment, and saves to Supabase."""
+    print(f"Analyzing {symbol}...")
+    close_prices = await fetch_coinbase_candles_async(client, symbol, days=200)
+    
+    if not close_prices or len(close_prices) < 30:
+        print(f"Insufficient data for {symbol}")
+        return
         
-        STABLECOINS = ["USDC-USD", "USDT-USD", "DAI-USD", "PYUSD-USD", "FDUSD-USD", "TUSD-USD", "USDD-USD"]
-        is_stablecoin = symbol in STABLECOINS
-        peg_target = 1.00
-        peg_tolerance = 0.02 
-        
-        data = fetch_coinbase_candles(symbol, days=200)
-        if data.empty or len(data) < 200: return {"error": f"Insufficient data for {symbol}"}
-        
-        close_data = data['Close']
-        prices = close_data.iloc[:, 0] if isinstance(close_data, pd.DataFrame) else close_data
-        prices_list = prices.tolist()
-        current_price = float(prices_list[-1])
-        dates = [d.strftime("%Y-%m-%d") for d in data.index]
+    # Run Math Models
+    consensus = trading_math.calculate_consensus(close_prices)
+    current_price = close_prices[-1]
+    
+    # Run AI RAG Model
+    headlines = await fetch_news_headlines(symbol)
+    ai_data = await fetch_groq_sentiment(symbol, headlines)
+    
+    sentiment_word = ai_data.get("sentiment", "ok").lower()
+    ai_analysis = ai_data.get("analysis", "No detailed analysis available.")
+    
+    # AI modifies the final signal slightly
+    final_signal = consensus["final_signal"]
+    score = consensus["score"]
+    
+    if sentiment_word == "good": 
+        score = min(100, score + 10)
+    elif sentiment_word == "bad": 
+        score = max(0, score - 10)
 
-        # Volatility & Stability Math
-        log_returns = np.log(prices / prices.shift(1)).dropna()
-        daily_volatility = log_returns.std()
-        annualized_volatility = daily_volatility * np.sqrt(365)
-        volatility_pct = annualized_volatility * 100
-        stability_score = 100.0 * np.exp(-annualized_volatility)
-
-        # Decay Math
-        max_date = datetime.strptime(dates[-1], "%Y-%m-%d")
-        ages_days = np.array([(max_date - datetime.strptime(d, "%Y-%m-%d")).days for d in dates])
-        exp_weights = np.exp(-1.0 * (ages_days / 365.25))
-        weighted_avg = np.average(prices_list, weights=(exp_weights / exp_weights.sum()))
-        
-        # Z-Score Math
-        price_std = np.std(prices_list)
-        z_score = (current_price - weighted_avg) / price_std if price_std > 0 else 0.0
-        decay_score = max(0.0, min(100.0, 50.0 - (z_score * 20.0)))
-
-        # RSI Math
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        current_rsi = float((100 - (100 / (1 + rs))).iloc[-1])
-        tech_score = 100 - current_rsi
-
-        # --- AI & LINKS INJECTION LOGIC ---
-        sentiment_word = "ok"
-        sentiment_multiplier = 1.0
-        ai_analysis = "Awaiting live AI analysis..." # Default fallback
-        
-        # 🚨 GUARANTEED LIVE LINKS (Kept safely in Python to prevent AI 404 errors)
-        coin_ticker = symbol.split('-')[0]
-        ai_links = [
-            f"https://finance.yahoo.com/quote/{symbol}/news/",
-            f"https://news.google.com/search?q={coin_ticker}+crypto+news"
-        ]
-        
-        if ai_data and symbol in ai_data:
-            coin_ai = ai_data[symbol]
-            sentiment_word = coin_ai.get("sentiment", "ok").lower()
-            # 🚨 Extract the blurb from Groq
-            ai_analysis = coin_ai.get("analysis", "No detailed analysis available at this time.")
+    # Note: For stablecoins, we check if they are in the crypto_metadata table
+    # This logic is handled dynamically. The math is done regardless, but if it's a stablecoin, 
+    # we can overwrite the signal based on the peg. We will fetch metadata first.
+    is_stablecoin = False
+    peg_target = 1.00
+    peg_tolerance = 0.02
+    
+    if supabase:
+        try:
+            # Query metadata (The populate pattern)
+            meta_resp = supabase.table("crypto_metadata").select("*").eq("symbol", symbol).execute()
+            if meta_resp.data:
+                metadata = meta_resp.data[0]
+                is_stablecoin = metadata.get("is_stablecoin", False)
+                peg_target = metadata.get("peg_target", 1.0)
+                peg_tolerance = metadata.get("peg_tolerance", 0.02)
+        except Exception as e:
+            print(f"Metadata fetch failed for {symbol}: {e}")
             
-            if sentiment_word == "good": sentiment_multiplier = 1.1
-            elif sentiment_word == "bad": sentiment_multiplier = 0.9
+    if is_stablecoin:
+        if current_price < (peg_target - peg_tolerance): 
+            final_signal = "SELL (DE-PEG)"
+            score = 0.0
+        elif current_price > (peg_target + peg_tolerance): 
+            final_signal = "BUY (PREMIUM)"
+            score = 100.0
+        else: 
+            final_signal = "HOLD (PEG INTACT)"
+            score = 50.0
 
-        # Final Score Math
-        final_score = (decay_score * decay_weight) + (tech_score * tech_weight)
-        final_score = max(0.0, min(100.0, final_score * sentiment_multiplier)) * 0.76
-        
-        # Signal Generation
-        if is_stablecoin:
-            if current_price < (peg_target - peg_tolerance): signal, final_score = "SELL (DE-PEG)", 0.0
-            elif current_price > (peg_target + peg_tolerance): signal, final_score = "BUY (PREMIUM)", 100.0
-            else: signal, final_score = "HOLD (PEG INTACT)", 50.0
-        else:
-            if final_score >= 75: signal = "STRONG BUY"
-            elif final_score >= 60: signal = "BUY"
-            elif final_score <= 25: signal = "STRONG SELL"
-            elif final_score <= 50: signal = "SELL"
-            else: signal = "HOLD"
+    # Save to Supabase
+    if supabase:
+        try:
+            coin_ticker = symbol.split('-')[0]
+            ai_links = [
+                f"https://finance.yahoo.com/quote/{symbol}/news/",
+                f"https://news.google.com/search?q={coin_ticker}+crypto+news"
+            ]
+            
+            payload = {
+                "symbol": symbol, 
+                "current_price": round(current_price, 3), 
+                "final_score": round(score, 1),
+                "signal": final_signal,
+                "components": {
+                    "indicators": consensus["indicators"],
+                    "ai_sentiment": sentiment_word,
+                    "ai_analysis": ai_analysis,
+                    "ai_links": ai_links,
+                    "recent_headlines": headlines
+                },
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            # Add margin for backward compatibility with frontend
+            payload["margin"] = round(score - 50, 1)
+            payload["weighted_avg"] = round(trading_math.calculate_sma(close_prices, 20)[-1], 3)
+            
+            supabase.table("cryptos").upsert(payload).execute()
+            print(f"Successfully upserted {symbol}")
+        except Exception as e:
+            print(f"Supabase upsert failed for {symbol}: {e}")
 
-        if supabase:
-            try:
-                supabase.table("cryptos").upsert({
-                    "symbol": symbol, "current_price": round(current_price, 3), "final_score": round(final_score, 1),
-                    "weighted_avg": round(weighted_avg, 3), "signal": signal, "margin": round(final_score - 50, 1),
-                    "updated_at": datetime.now().isoformat()
-                }).execute()
-            except Exception: pass
-
-        return {
-            "symbol": symbol,
-            "current_price": round(current_price, 3),
-            "final_score": round(final_score, 1),
-            "signal": signal,
-            "weighted_avg": round(weighted_avg, 3),
-            "base_threshold": 50.0,
-            "weight_recent": 0.0, 
-            "components": {
-                "fundamental_value": f"${weighted_avg:.3f}",
-                "fundamental_score": round(decay_score, 1),
-                "technical_rsi": round(current_rsi, 1),
-                "technical_score": round(tech_score, 1),
-                "volatility_pct": round(volatility_pct, 2),
-                "stability_score": round(stability_score, 1),
-                "ai_sentiment": sentiment_word,
-                "ai_multiplier": sentiment_multiplier,
-                "ai_analysis": ai_analysis, # <- Blurb passed to React here
-                "ai_links": ai_links 
-            },
-            "value_coefficient": round(z_score, 3), 
-            "margin": round(final_score - 50, 1) 
-        }
-        
-    except Exception as e:
-        print(f"Error calculating {symbol}: {e}")
-        return {"error": str(e), "symbol": symbol}
-
-# --- Scheduler Logic ---
-
-def scheduled_analysis():
-    print(f"[SCHEDULER] Starting daily analysis for {len(TRACKED_CRYPTOS)} cryptos...")
-    bulk_ai_data = fetch_bulk_ai_sentiment(TRACKED_CRYPTOS)
-    success_count, error_count = 0, 0
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(calculate_hybrid_value, symbol, 0.7, 0.3, bulk_ai_data): symbol for symbol in TRACKED_CRYPTOS}
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-                if "error" not in result: success_count += 1
-                else: error_count += 1
-            except Exception: error_count += 1
-    
-    print(f"[SCHEDULER] Complete. {success_count} analyzed, {error_count} errors")
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(scheduled_analysis, CronTrigger(hour=0, minute=0))
-scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
+async def run_market_update():
+    """Background task executed by cron."""
+    print("Starting market update cron...")
+    # Process in chunks of 4 to prevent aggressive rate limits from Coinbase/NewsAPI
+    chunk_size = 4
+    async with httpx.AsyncClient() as client:
+        for i in range(0, len(TRACKED_CRYPTOS), chunk_size):
+            chunk = TRACKED_CRYPTOS[i:i+chunk_size]
+            tasks = [analyze_and_upsert_symbol(client, sym) for sym in chunk]
+            await asyncio.gather(*tasks)
+            # Sleep between chunks to respect API limits
+            await asyncio.sleep(2)
+    print("Market update complete.")
 
 # --- API Endpoints ---
 
 @app.get("/")
 def root():
-    return {"status": "Crypto Value Analyzer running"}
+    return {"status": "Crypto Value Analyzer (Hostinger Edition) running"}
 
 @app.get("/health")
 def health():
@@ -327,44 +266,117 @@ def health():
 
 @app.get("/cryptos")
 def top_cryptos():
+    """
+    Returns the cached data from Supabase.
+    Real-time calculation is now entirely handled by the 15-minute cron job.
+    """
     if supabase:
         try:
+            # We fetch from cryptos table. 
             response = supabase.table("cryptos").select("*").order("final_score", desc=True).execute()
-            if response.data and len(response.data) > 0:
+            if response.data:
                 return {"cryptos": response.data, "total": len(response.data), "source": "database_cache"}
-        except Exception: pass
+        except Exception as e:
+            print(f"Error fetching cryptos: {e}")
+            return {"error": "Failed to fetch from database"}
+            
+    return {"cryptos": [], "total": 0, "source": "none"}
 
-    bulk_ai_data = fetch_bulk_ai_sentiment(TRACKED_CRYPTOS)
-    results = []
+@app.post("/analyze/{symbol}")
+async def analyze_endpoint(symbol: str):
+    """Force re-analyzes a specific coin."""
+    async with httpx.AsyncClient() as client:
+        await analyze_and_upsert_symbol(client, symbol)
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_symbol = {executor.submit(calculate_hybrid_value, symbol, 0.7, 0.3, bulk_ai_data): symbol for symbol in TRACKED_CRYPTOS}
-        for future in concurrent.futures.as_completed(future_to_symbol):
-            result = future.result()
-            if "error" not in result:
-                results.append(result)
-    
-    results.sort(key=lambda x: x['final_score'], reverse=True)
-    return {"cryptos": results, "total": len(results), "source": "real_time_computed"}
-
-@app.get("/analyze/{symbol}")
-def analyze_crypto(symbol: str):
-    symbol = symbol.upper()
-    if "-" not in symbol: symbol = f"{symbol}-USD"
-    ai_data = fetch_bulk_ai_sentiment([symbol])
-    return calculate_hybrid_value(symbol, 0.7, 0.3, ai_data)
+    if supabase:
+        try:
+            resp = supabase.table("cryptos").select("*").eq("symbol", symbol).execute()
+            if resp.data:
+                return resp.data[0]
+        except Exception as e:
+            print(f"Error fetching analyzed symbol: {e}")
+            
+    return {"error": "Failed to analyze"}
 
 @app.get("/history/{symbol}")
-def get_crypto_history(symbol: str):
+async def get_history(symbol: str):
+    """
+    Returns the historical price data for charting.
+    Fetches the 200 day candles directly from Coinbase.
+    """
+    async with httpx.AsyncClient() as client:
+        close_prices = await fetch_coinbase_candles_async(client, symbol, days=200)
+    
+    if not close_prices:
+        raise HTTPException(status_code=404, detail="History not found")
+        
+    # Generate dates for the frontend chart starting from 200 days ago
+    dates = [(datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(len(close_prices)-1, -1, -1)]
+    data = [{"date": d, "price": p} for d, p in zip(dates, close_prices)]
+    return {"data": data}
+
+# --- Cron Endpoints ---
+
+@app.get("/cron/keep-alive")
+def keep_alive():
+    """Pinged by Hostinger Cron every 15-30 mins to keep Supabase awake."""
+    if supabase:
+        try:
+            supabase.table("cryptos").select("symbol").limit(1).execute()
+            return {"status": "Supabase pinged successfully."}
+        except Exception as e:
+            print(f"Supabase ping error: {e}")
+            return {"error": "Failed to ping Supabase"}
+    return {"status": "Supabase not configured."}
+
+@app.post("/cron/update-market")
+async def trigger_market_update(background_tasks: BackgroundTasks, cron_secret: str | None = Header(default=None)):
+    """
+    Pinged by Hostinger Cron every 15 mins.
+    Fires off the update process in the background so the cron request doesn't timeout.
+    """
+    expected_secret = os.getenv("CRON_SECRET")
+    if expected_secret and cron_secret != expected_secret:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    background_tasks.add_task(run_market_update)
+    return {"status": "Market update triggered in background."}
+
+# --- Groq Chatbot Endpoint ---
+
+class ChatRequest(BaseModel):
+    message: str
+    symbol: str
+
+@app.post("/chat")
+async def chat_with_bot(req: ChatRequest):
+    """
+    Simple Chat endpoint for the frontend. 
+    If Groq rate limit is hit, it returns a 429 error so the frontend can hide the UI.
+    """
+    if not groq_client:
+         raise HTTPException(status_code=503, detail="Chatbot offline. GROQ_API_KEY missing.")
+         
+    prompt = f"The user is asking about {req.symbol}. User: {req.message}. Respond concisely as a helpful crypto assistant."
+    
     try:
-        symbol = symbol.upper()
-        if "-" not in symbol: symbol = f"{symbol}-USD"
-        hist = fetch_coinbase_candles(symbol, days=365)
-        if hist.empty: return {"error": f"No data found"}
-        chart_data = [{"date": date.strftime("%Y-%m-%d"), "price": round(row['Close'], 2)} for date, row in hist.iterrows()]
-        return {"data": chart_data}
+        def _call_chat():
+            return groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+                max_tokens=150
+            )
+        
+        response = await asyncio.to_thread(_call_chat)
+        return {"reply": response.choices[0].message.content.strip()}
+        
     except Exception as e:
-        return {"error": str(e)}
+        # Check if it's a rate limit error (Groq usually returns 429)
+        error_msg = str(e)
+        if "429" in error_msg or "rate limit" in error_msg.lower():
+            # Return specific error for frontend to handle
+            raise HTTPException(status_code=429, detail="RATE_LIMIT_REACHED")
+        raise HTTPException(status_code=500, detail="Chat failed. Please try again.")
 
 if __name__ == "__main__":
     import uvicorn
